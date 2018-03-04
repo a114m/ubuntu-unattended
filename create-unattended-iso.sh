@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
+# set -x
+
 # file names & paths
 tmp="$HOME"  # destination folder to store the final iso file
 hostname="ubuntu"
-currentuser="$( whoami)"
+currentuser="$(whoami)"
 
 # define spinner function for slow tasks
 # courtesy of http://fitnr.com/showing-a-bash-spinner.html
@@ -77,36 +79,15 @@ trus=$(fgrep Trusty $tmphtml | head -1 | awk '{print $3}')
 xenn=$(fgrep Xenial $tmphtml | head -1 | awk '{print $3}')
 
 
+download_file="mini.iso"                                       # filename of the iso to be downloaded
+download_location="http://archive.ubuntu.com/ubuntu/dists\
+/xenial/main/installer-amd64/current/images/netboot"  # location of the file to be downloaded
+new_iso_name="mini-unattended.iso"
 
-# ask whether to include vmware tools or not
-while true; do
-    echo " which ubuntu edition would you like to remaster:"
-    echo
-    echo "  [1] Ubuntu $prec LTS Server amd64 - Precise Pangolin"
-    echo "  [2] Ubuntu $trus LTS Server amd64 - Trusty Tahr"
-    echo "  [3] Ubuntu $xenn LTS Server amd64 - Xenial Xerus"
-    echo
-    read -p " please enter your preference: [1|2|3]: " ubver
-    case $ubver in
-        [1]* )  download_file="ubuntu-$prec-server-amd64.iso"           # filename of the iso to be downloaded
-                download_location="http://releases.ubuntu.com/$prec/"     # location of the file to be downloaded
-                new_iso_name="ubuntu-$prec-server-amd64-unattended.iso" # filename of the new iso file to be created
-                break;;
-        [2]* )  download_file="ubuntu-$trus-server-amd64.iso"             # filename of the iso to be downloaded
-                download_location="http://releases.ubuntu.com/$trus/"     # location of the file to be downloaded
-                new_iso_name="ubuntu-$trus-server-amd64-unattended.iso"   # filename of the new iso file to be created
-                break;;
-        [3]* )  download_file="ubuntu-$xenn-server-amd64.iso"
-                download_location="http://releases.ubuntu.com/$xenn/"
-                new_iso_name="ubuntu-$xenn-server-amd64-unattended.iso"
-                break;;
-        * ) echo " please answer [1], [2] or [3]";;
-    esac
-done
 
 if [ -f /etc/timezone ]; then
   timezone=`cat /etc/timezone`
-elif [ -h /etc/localtime]; then
+elif [ -h /etc/localtime ]; then
   timezone=`readlink /etc/localtime | sed "s/\/usr\/share\/zoneinfo\///"`
 else
   checksum=`md5sum /etc/localtime | cut -d' ' -f1`
@@ -183,11 +164,11 @@ mkdir -p $tmp/iso_new
 if grep -qs $tmp/iso_org /proc/mounts ; then
     echo " image is already mounted, continue"
 else
-    (mount -o loop $tmp/$download_file $tmp/iso_org > /dev/null 2>&1)
+    (mount -o loop $tmp/$download_file $tmp/iso_org > /dev/null)
 fi
 
 # copy the iso contents to the working directory
-(cp -rT $tmp/iso_org $tmp/iso_new > /dev/null 2>&1) &
+(cp -rT $tmp/iso_org $tmp/iso_new > /dev/null) &
 spinner $!
 
 # set the language for the installation menu
@@ -205,7 +186,7 @@ sed -i -r 's/timeout\s+[0-9]+/timeout 1/g' $tmp/iso_new/isolinux/isolinux.cfg
 if [[ $ub1604 == "yes" ]]; then
    late_command="apt-install wget; in-target wget --no-check-certificate -O /home/$username/start.sh https://github.com/netson/ubuntu-unattended/raw/master/start.sh ;\
      in-target chmod +x /home/$username/start.sh ;"
-else 
+else
    late_command="chroot /target wget -O /home/$username/start.sh https://github.com/netson/ubuntu-unattended/raw/master/start.sh ;\
      chroot /target chmod +x /home/$username/start.sh ;"
 fi
