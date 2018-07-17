@@ -7,7 +7,8 @@
 # file names & paths
 working_dir=`pwd -P`
 currentuser="$(whoami)"
-seed_file="preseed.seed"
+seed_file="preseed.cfg"
+preseed_host="http://10.0.2.2:8000"
 #
 # command line args
 input_preseed_file=$1
@@ -16,10 +17,14 @@ password=${3-"cloudinn"}
 hostname=${4-"proxy"}
 timezone=${5-"Etc/UTC"}
 menu_lang=${6-"en"}
+ipaddress=${7-"192.168.1.42"}
+netmask=${8-"255.255.255.0"}
+gateway=${9-"192.168.1.1"}
+nameserver=${10-"8.8.8.8,8.8.4.4"}
 #
 if [ -z $input_preseed_file ] || [ $1 = '-h' ] || [ $1 = '--help' ]; then
   echo " no preseed file was given"
-  echo "Usage: $0 <preseed_file> [username[password[hostname[timezone[setup menu language]]]]]"
+  echo "Usage: $0 <preseed_file> [username[password[hostname[timezone[menu_language[ipaddress[netmask[gateway[nameserver]]]]]]]]]"
   echo
   exit 1
 else
@@ -123,7 +128,7 @@ if [ $(program_is_installed "7z") -eq 0 ]; then
   installing_apps=$installing_apps' p7zip-full'
 fi
 #
-if [ ! -z $installing_apps ]; then
+if [ ! -z "$installing_apps" ]; then
   echo "Installing system dependencies: $installing_apps"
   (apt-get -y update > /dev/null 2>&1) &
   spinner $!
@@ -151,34 +156,75 @@ echo $menu_lang > $tmp_iso_dir/lang
 # 16.04
 # syslinux auto proceed
 # taken from https://github.com/fries/prepare-ubuntu-unattended-install-iso/blob/master/make.sh
-sed -i -r 's/timeout\s+[0-9]+/timeout 50/g' $tmp_iso_dir/isolinux.cfg
+sed -i -r 's/timeout\s+[0-9]+/timeout 1/g' $tmp_iso_dir/isolinux.cfg
 # sed -i -r 's/prompt\s+[0-9]+/prompt 2/g' $tmp_iso_dir/isolinux.cfg
 #
 # copy the preseed file to the iso
-cp -rT $input_preseed_file $tmp_iso_dir/$seed_file
+new_seed_path=$working_dir/preseed/$seed_file
+mkdir -p $working_dir/preseed
+cp -rT $input_preseed_file $new_seed_path
 #
 # generate the password hash
 pwhash=$(echo $password | mkpasswd -s -m sha-512)
 #
 # update preseed file
-sed -i "s@{{username}}@$username@g" $tmp_iso_dir/$seed_file
-sed -i "s@{{pwhash}}@$pwhash@g" $tmp_iso_dir/$seed_file
-sed -i "s@{{hostname}}@$hostname@g" $tmp_iso_dir/$seed_file
-sed -i "s@{{timezone}}@$timezone@g" $tmp_iso_dir/$seed_file
+sed -i "s@{{username}}@$username@g" $new_seed_path
+sed -i "s@{{pwhash}}@$pwhash@g" $new_seed_path
+sed -i "s@{{hostname}}@$hostname@g" $new_seed_path
+sed -i "s@{{timezone}}@$timezone@g" $new_seed_path
 #
 # calculate checksum for seed file
-seed_checksum=$(md5sum $tmp_iso_dir/$seed_file)
+seed_checksum=$(md5sum $new_seed_path | cut -d\  -f1)
 #
 # remove default menu selection
 sed -i "/menu default/d" $tmp_iso_dir/txt.cfg
 #
+install_params="\
+console-setup/layoutcode=us \
+passwd/user-fullname=$username \
+passwd/username=$username \
+passwd/user-password-crypted=$pwhash \
+hostname=$hostname \
+domain=$hostname \
+time/zone=$timezone \
+mirror/country=auto \
+mirror/http/mirror=us.archive.ubuntu.com \
+mirror/http/proxy= \
+netcfg/choose_interface=eth1 \
+netcfg/get_ipaddress=$ipaddress \
+netcfg/get_netmask=$netmask \
+netcfg/get_gateway=$gateway \
+netcfg/get_nameservers=$nameserver \
+netcfg/confirm_static=true \
+user-setup/encrypt-home=false \
+partman-auto/init_automatically_partition=biggest_free \
+partman-md/confirm=true \
+partman-partitioning/confirm_write_new_label=true \
+partman/choose_partition=finish \
+partman/confirm=true \
+partman/confirm_nooverwrite=true \
+"
+# clock-setup/ntp=true \
+# finish-install/reboot_in_progress=true \
+# console-setup/ask_detect=false \
+# partman-lvm/confirm=false \
+# partman-md/confirm=false \
+#
 # add our new option to the menu as default
 sed -i "/label install/ilabel autoinstall\n\
-  menu label ^Autoinstall CloudInn Ubuntu\n\
+  menu label ^Proxy auto-install\n\
   menu default\n\
   kernel linux\n\
-  append initrd=initrd.gz auto=true priority=high preseed/file=$seed_file preseed/file/checksum=$seed_checksum --" "$tmp_iso_dir/txt.cfg"
-#
+  append\
+  preseed/url=$preseed_host/preseed/$seed_file\
+  initrd=initrd.gz\
+  auto=true\
+  priority=high\
+  language=en\
+  country=US\
+  locale=en_US\
+  --" $tmp_iso_dir/txt.cfg
+#  $install_params\
 # creating the remastered iso
 cd $tmp_iso_dir || exit
 (mkisofs -D -r -V "CLOUDINN_UBUNTU" -cache-inodes -J -l -b isolinux.bin -c boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -o $working_dir/$output_iso_name . > /dev/null 2>&1) &
